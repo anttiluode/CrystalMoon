@@ -83,7 +83,8 @@
   <canvas id="pip" width="96" height="72"></canvas>
   <div class="btns" style="grid-template-columns: 1fr;"><button id="camBtn">CAMERA (V)</button></div>
   <div class="sl">picture → crystal <output id="cgO"></output></div><input type="range" id="cg" min="0" max="1" step="0.05" value="0.9">
-  <div class="sl">picture → glass <output id="clO"></output></div><input type="range" id="cl" min="0" max="3" step="0.05" value="1.2">
+  <div class="sl">picture → light (sky, glass) <output id="csO"></output></div><input type="range" id="cs" min="0" max="1" step="0.05" value="0.85">
+  <div class="sl">picture → bent space <output id="clO"></output></div><input type="range" id="cl" min="0" max="3" step="0.05" value="1.2">
   <div class="sl">motion → new crystal <output id="cmO"></output></div><input type="range" id="cm" min="0" max="2" step="0.05" value="1">
   <label><input type="checkbox" id="cin" checked> your face inside the moon too</label>
 </div>
@@ -102,7 +103,7 @@
     <p>A Mexican-hat field condenses into crystal. Where the crystal is dense its clock runs slow, and light bends toward it.</p>
     <p>The moon is a sphere inversion. Inside it, the infinite world beyond is turned inside out, and its horizon becomes the moon's glowing core. Fly in, and the world inside becomes the world outside.</p>
     <p>Where you fly, you leave a wake, and crystal grows in it.</p>
-    <p>Give it your camera and your picture becomes part of the law: where you are bright, crystal may live; where you move, new crystal is born; and your face is a pane of glass that bends the light.</p>
+    <p>Give it your camera and you become the light of this world: your picture is the sky, every crystal is glass that bends and mirrors it, and where you move, new crystal is born.</p>
     <div class="gos"><button id="goPlain">ENTER</button><button id="goCam" class="cam">ENTER WITH YOUR CAMERA</button></div>
   </div>
 </div>
@@ -292,6 +293,7 @@ uniform float uIso, uPol, uKappa, uHue, uAmp;
 uniform float uIsoIn, uPolIn, uHueIn, uAmpIn;
 uniform vec3 uMoonW; uniform float uMoonR;
 uniform int uSteps, uStepsIn;
+uniform sampler2D uVid; uniform float uCamSky, uVidAspect;
 out vec4 frag;
 
 vec4 sampleV(sampler2D s, vec3 p){
@@ -304,7 +306,7 @@ vec4 sampleV(sampler2D s, vec3 p){
 vec3 hsv(float h, float s, float v){ vec3 k = clamp(abs(mod(h * 6.0 + vec3(0, 4, 2), 6.0) - 3.0) - 1.0, 0.0, 1.0); return v * mix(vec3(1), k, s); }
 vec3 h33(vec3 p){ p = fract(p * vec3(.1031, .1030, .0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
 
-vec3 sky(vec3 d, float hue){
+vec3 skyBase(vec3 d, float hue){
   vec3 base = mix(vec3(0.004, 0.006, 0.012), hsv(hue + 0.5, 0.6, 0.05), 0.5 + 0.5 * d.y);
   float neb = 0.5 + 0.5 * sin(d.x * 3.1 + sin(d.y * 4.7 + uTime * 0.02) * 1.3) * sin(d.z * 2.3 + d.y * 1.7);
   base += hsv(hue + 0.12 * sin(d.x * 2.0), 0.7, 0.035) * neb * neb;
@@ -312,6 +314,23 @@ vec3 sky(vec3 d, float hue){
   float star = step(0.975, h.x) * smoothstep(0.16, 0.0, length(f - (h - 0.5) * 0.6));
   base += star * mix(vec3(1.0, 0.85, 0.7), vec3(0.7, 0.85, 1.0), h.y) * (0.6 + 1.6 * h.z);
   return base;
+}
+// the camera frame as the walls of the sky: a box at infinity, every wall a mirror of you
+vec3 camEnv(vec3 d, float hue){
+  vec3 a = abs(d); vec2 st;
+  if (a.z >= a.x && a.z >= a.y) st = vec2(d.z > 0.0 ? d.x : -d.x, d.y) / a.z;
+  else if (a.x >= a.y)           st = vec2(d.x > 0.0 ? -d.z : d.z, d.y) / a.x;
+  else                           st = vec2(d.x, d.y > 0.0 ? -d.z : d.z) / a.y;
+  vec2 uv = vec2(0.5 - 0.5 * st.x / uVidAspect, 0.5 - 0.5 * st.y);   // mirrored, aspect kept (centre crop)
+  vec3 c = pow(texture(uVid, uv).rgb, vec3(1.6)) * 1.6;
+  float lum = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(c, lum * hsv(hue, 0.45, 1.0), 0.35);                      // a little of this level's colour
+  float vig = (1.0 - smoothstep(0.7, 1.0, abs(st.x))) * (1.0 - smoothstep(0.7, 1.0, abs(st.y)));
+  return c * (0.2 + 0.8 * vig);
+}
+vec3 sky(vec3 d, float hue){
+  vec3 b = skyBase(d, hue);
+  return uCamSky > 0.0 ? mix(b, camEnv(d, hue), uCamSky) : b;
 }
 vec3 normalAt(sampler2D s, vec3 p, float pol){
   const float e = 0.6;
@@ -329,13 +348,21 @@ vec3 crystal(vec3 n, vec3 d, float age, float depth, float hue, vec3 where){
   vec3 base = hsv(hue + 0.06 * sin(dot(where, vec3(0.11, 0.07, 0.05))), 0.55 + 0.25 * depth, 0.9);
   base = mix(base, vec3(0.85, 0.95, 1.0), 0.75 * young);
   float dif = max(dot(n, L), 0.0), back = max(dot(n, -L), 0.0);
-  vec3 env = sky(reflect(d, n), hue);
+  vec3 env = skyBase(reflect(d, n), hue);
   vec3 col = base * (0.08 + 0.7 * dif + 0.3 * back * depth);
   col += base * depth * 0.35;                                       // light held inside thick crystal
   col += hsv(hue + 0.35 * fr + 0.15 * dif, 0.85, 1.0) * fr * 0.9;  // thin-film iridescent rim
   col += env * 8.0 * fr;
   col += pow(max(dot(reflect(d, n), L), 0.0), 60.0) * 1.2;
   col += vec3(0.6, 0.85, 1.0) * young * 1.2;
+  if (uCamSky > 0.0) {
+    // crystal as glass: the camera seen through it (refracted) and on it (reflected)
+    vec3 rf = refract(d, n, 0.67);
+    if (dot(rf, rf) < 0.01) rf = reflect(d, n);
+    vec3 through = camEnv(rf, hue) * mix(vec3(1.0), base, 0.35);
+    col = mix(col, through, uCamSky * (0.6 - 0.4 * fr));
+    col += camEnv(reflect(d, n), hue) * uCamSky * fr * 0.8;
+  }
   return col;
 }
 
@@ -495,7 +522,9 @@ const CAMTEX = tex(CW, CH, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
 const camData = new Float32Array(2 * CW * CH);
 function uploadCam() { gl.bindTexture(gl.TEXTURE_2D, CAMTEX); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, CW, CH, gl.RG, gl.FLOAT, camData); }
 uploadCam();
-const camCfg = { on: false, gain: 0.9, motion: 1.0, lens: 1.2, inMoon: true };
+const camCfg = { on: false, gain: 0.9, motion: 1.0, lens: 1.2, inMoon: true, sky: 0.85 };
+const VIDTEX = tex(1, 1, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+let camAspect = 4 / 3;
 function camUniforms(mode) {
   return { uCamMode: { int: mode }, uCamGain: camCfg.gain, uCamMotion: camCfg.motion, uCamLens: camCfg.lens, uCamC: CM.MOON.c, uCamR: CM.MOON.R };
 }
@@ -568,7 +597,10 @@ function faceMoon() {
   const m = [CM.MOON.c[0] + 0.5, CM.MOON.c[1] + 0.5, CM.MOON.c[2] + 0.5];
   const f = fwd(), to = norm3(sub3(m, cam.p));
   const ax = cross3(f, to), s = Math.hypot(...ax), c = dot3(f, to);
-  if (s < 1e-6) return;
+  if (s < 1e-6) {                       // already facing it, or exactly away (as after flying out of the moon)
+    if (c < 0) cam.q = qnorm(qmul(cam.q, qaxis([0, 1, 0], Math.PI)));
+    return;
+  }
   cam.q = qnorm(qmul(qaxis(ax.map((v) => v / s), Math.atan2(s, c)), cam.q));
 }
 const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -640,6 +672,7 @@ function enterMoon() {
   inner.kappa = inner.law.kappa; inner.T = inner.law.T; inner.isoFrac = inner.law.isoFrac; inner.amp = 0.5; inner.frames = 0;
   seedWorld(inner, outer);
   law2ui(outer);
+  if (camCfg.on && outer.law.lambda > 6.5) { setLambda(outer, 6); $('lam').value = 6; $('lam').dispatchEvent(new Event('input')); }
   flash(`LEVEL ${outer.level}`, outer.law.name.split(' · ')[0]);
 }
 
@@ -701,7 +734,7 @@ async function camStart() {
   camCfg.on = true;
   $('camBtn').classList.add('on'); $('camState').textContent = 'on';
   // stand back from the mirror: the picture hangs at z = 11, the moon behind it
-  cam.p = [32.5, 32.5, -17.5]; cam.v = [0, 0, 0]; cam.q = [0, 0, 0, 1];
+  cam.p = [21.5, 27.5, -17.5]; cam.v = [0, 0, 0]; cam.q = [0, 0, 0, 1];
   // a picture needs more atoms: a wavelength of 6 puts ~9 × 7 atoms across it (at 9 it was ~6 × 4)
   if (outer.law.lambda > 6.5) { setLambda(outer, 6); $('lam').value = 6; $('lam').dispatchEvent(new Event('input')); }
   flash('YOUR FACE', 'bright is where crystal may live · motion is where it is born');
@@ -716,7 +749,11 @@ function camStop() {
 function captureCam() {
   const v = camVideo;
   if (!v || v.readyState < 2 || !v.videoWidth) return;
-  const vw = v.videoWidth, vh = v.videoHeight, a = 4 / 3;   // centre crop to 4:3
+  // the full frame goes to the GPU as the light of the world
+  gl.bindTexture(gl.TEXTURE_2D, VIDTEX);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v);
+  camAspect = v.videoWidth / v.videoHeight;
+  const vw = v.videoWidth, vh = v.videoHeight, a = 4 / 3;   // centre crop to 4:3 for the field
   let sw = vw, sh = vh;
   if (vw / vh > a) sw = vh * a; else sh = vw / a;
   camCtx.drawImage(v, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, CW, CH);
@@ -755,6 +792,7 @@ function captureCam() {
 $('camBtn').onclick = () => (camCfg.on ? camStop() : camStart());
 bind('cg', (v) => v.toFixed(2), (v) => { camCfg.gain = v; });
 bind('cl', (v) => v.toFixed(2), (v) => { camCfg.lens = v; });
+bind('cs', (v) => v.toFixed(2), (v) => { camCfg.sky = v; });
 bind('cm', (v) => v.toFixed(2), (v) => { camCfg.motion = v; });
 $('cin').onchange = () => { camCfg.inMoon = $('cin').checked; };
 
@@ -811,7 +849,8 @@ function tick(now) {
     uIso: isoOf(outer), uPol: Math.sign(outer.isoFrac), uKappa: outer.kappa, uHue: outer.law.hue, uAmp: outer.amp,
     uIsoIn: isoOf(inner), uPolIn: Math.sign(inner.isoFrac), uHueIn: inner.law.hue, uAmpIn: inner.amp,
     uMoonW: mc, uMoonR: CM.MOON.R, uSteps: { int: 150 }, uStepsIn: { int: 110 },
-  }, { uV1: outer.V1, uV2: outer.V2, uW1: inner.V1 });
+    uCamSky: camCfg.on ? camCfg.sky : 0, uVidAspect: camAspect,
+  }, { uV1: outer.V1, uV2: outer.V2, uW1: inner.V1, uVid: VIDTEX });
 
   // HUD
   fpsN++; fpsT += dt;
@@ -845,6 +884,11 @@ if (SELFTEST) {
   window.__seedBig = (a) => { seedWorld(outer, null, a); seedWorld(inner, null, a); return true; };
   window.__state = () => ({ ampOuter: outer.amp, ampInner: inner.amp, level: outer.level });
   window.__camStart = async () => { await camStart(); return camCfg.on; };
+  window.__faceTest = () => {           // stand on the moon's axis looking straight away from it, then press M
+    cam.p = [32.5, 32.5, 12.5]; cam.q = qaxis([0, 1, 0], Math.PI); faceMoon();
+    const f = fwd(), to = norm3(sub3([32.5, 32.5, 32.5], cam.p));
+    return dot3(f, to);
+  };
   window.__selftest = (() => {
     SELFTEST_NOISE = false;
     function parity(camMode, seed) {

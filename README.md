@@ -6,10 +6,11 @@ A Mexican-hat field condenses into crystal. Where the crystal is dense, its cloc
 
 One HTML page, WebGL2, no libraries. **Live:** https://anttiluode.github.io/CrystalMoon/
 
-**Your camera.** Press **ENTER WITH YOUR CAMERA**, or **V** at any time. Your picture becomes part of the law:
+**Your camera.** Press **ENTER WITH YOUR CAMERA**, or **V** at any time. You become the light of the world, and your picture becomes part of its law:
+- **The picture is the light.** The full video frame forms the walls of the sky, a box at infinity where every wall mirrors you. Every crystal is glass that refracts and reflects it, the field's lensing bends it, and the moon's rim mirrors it. This is how your face is actually visible: the field is only 64 voxels across, far too coarse to draw a face, so, as in AnttisBrain2, the picture is not drawn by the field. It is the light passing through the field.
 - **Brightness gates ε.** Where you are bright, crystal may live; where you are dark, it melts. The picture becomes a crystal mosaic standing in the world.
 - **Motion drives.** Where you move, new crystal is born, ice-white because it's newborn.
-- **The picture is a pane of glass.** It is added to the light's density, so it bends what is behind it (the moon included) and glows faintly.
+- **The picture bends space.** Its brightness is added to the light's density, so bright parts of you bend what is behind them.
 - **Your face is inside the moon too.** It is painted on a shell around the moon in the inner world, so through the inversion it appears on the near inside of the moon, the same way up.
 
 **Controls:**
@@ -101,9 +102,9 @@ Found while calibrating: with the open sea at ε = −0.06, the crystal front cr
 - **Crystals grown from noise are polycrystalline:** grains and defects, not perfect lattices. The shapes are the BCC family, not carbon.
 - **The descent is one way.** Only two worlds live in memory, so the way back up is gone once you go down.
 - **There is no lensing inside the moon,** only the inversion.
-- **The camera picture is coarse as crystal.** At wavelength 6 (the camera sets this, and the fineness slider changes it) the sheet holds about 9 × 7 atoms, so it is a mosaic, not a portrait. The glass and glow carry the picture at the 56 × 42 voxel grid. Turning on the camera also changes the level's wavelength, so the whole world gets finer.
+- **As crystal, your picture is not recognisable.** Antti tested it with his real face: it is not. At wavelength 6 the sheet holds about 9 × 7 atoms, a mosaic of where you are bright and where you move. Recognisability comes only from the picture as light. Turning on the camera also sets each level's wavelength to 6, so the whole world gets finer.
 - **The face in the moon uses the inner level's own wavelength** (7–11.5), so there it reads as a coarse shape.
-- **Not tried on a real webcam yet.** Headless runs used Chrome's fake camera (a test pattern). Whether a real face is recognisable in crystal is untested.
+- **The picture-as-light version has only run on Chrome's fake camera** (a test pattern), not on a real face yet.
 - **The Kelvin result (T8) is about harmonic fields.** The crystal field is not harmonic: each level is its own simulation, viewed through the inversion, not derived from the level above.
 
 ## Files
