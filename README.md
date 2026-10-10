@@ -96,7 +96,7 @@ Found while calibrating: with the open sea at ε = −0.06, the crystal front cr
 
 ## What this is not (yet)
 
-- **Not tested on a real GPU.** It was only run headless in a software renderer, where one frame takes seconds. Frame rate on real hardware is unknown; lower *render scale* or *time speed* if it struggles.
+- **Real-GPU speed is known for one machine only.** Antti's screenshot (top of this page) shows 60 fps at render scale 35%, ten levels down. The camera adds two small texture reads per voxel; its cost on a real GPU is not yet measured.
 - **The universe repeats every 64 units.** The field is periodic, so you are in one cell of an infinite crystal; fog hides most of the repetition.
 - **Crystals grown from noise are polycrystalline:** grains and defects, not perfect lattices. The shapes are the BCC family, not carbon.
 - **The descent is one way.** Only two worlds live in memory, so the way back up is gone once you go down.
