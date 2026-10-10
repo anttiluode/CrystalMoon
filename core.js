@@ -111,6 +111,60 @@
     return m * smoothstep(MOON.R + 0.5, MOON.R + 3, dm);
   }
 
+  // ------------------------------------------------------------- the camera
+  /*  The webcam enters the field in the two places the equation offers:
+   *
+   *    brightness b ∈ [0,1]  →  ε, the GAIN: where crystal may live.
+   *        ε ← mix(ε, ε_sea + (ε_island + 0.1 − ε_sea)·b, w·gain)
+   *        bright regions crystallise, dark regions melt: a crystal halftone.
+   *    change d ∈ [0,1]      →  ε + 0.45·w·motion·d   and a small additive DRIVE
+   *        h = 0.04·w·motion·d  — movement nucleates newborn crystal, even in the dark.
+   *
+   *  (Driver vs modulator: d drives, b gates. The same split as basal input
+   *  vs apical tuft.) The view pass also adds lens·w·b·0.25 to the light's
+   *  density ρ, so the image is a glass relief that bends what is behind it.
+   *
+   *  Where the image lives, w(x):
+   *    slab  — a sheet about one atom thick standing in the outer world at z = 11,
+   *            56×42 voxels, mirror-imaged for a viewer looking toward +z;
+   *    shell — around the moon in the INNER world, on its +z hemisphere, so
+   *            that through the antipodal portal it appears on the near inside
+   *            of the moon, upright and mirrored the same way as the slab.
+   *  Sampling is a manual bilinear lookup, identical here and in the shader.
+   */
+  const CAM = { W: 96, H: 72, slabZ: 11, slabHX: 28, slabHY: 21, shellSX: 0.75, shellSY: 0.56 };
+
+  function camTex(img, u, v) { // img: Float32Array, RG interleaved, row 0 = top of the picture
+    const W = CAM.W, H = CAM.H;
+    const fx = Math.min(1, Math.max(0, u)) * W - 0.5, fy = Math.min(1, Math.max(0, v)) * H - 0.5;
+    const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    const ax = Math.min(W - 1, Math.max(0, x0)), bx = Math.min(W - 1, Math.max(0, x0 + 1));
+    const ay = Math.min(H - 1, Math.max(0, y0)), by = Math.min(H - 1, Math.max(0, y0 + 1));
+    const at = (x, y, c) => img[2 * (y * W + x) + c];
+    const out = [0, 0];
+    for (let c = 0; c < 2; c++) {
+      const top = at(ax, ay, c) + (at(bx, ay, c) - at(ax, ay, c)) * tx;
+      const bot = at(ax, by, c) + (at(bx, by, c) - at(ax, by, c)) * tx;
+      out[c] = top + (bot - top) * ty;
+    }
+    return out;
+  }
+  function rectW(sx, sy) { return (1 - smoothstep(0.9, 1.0, Math.abs(sx))) * (1 - smoothstep(0.9, 1.0, Math.abs(sy))); }
+  /** Where the camera image sits at world point x: {w, u, v}. mode 1 = slab, 2 = shell. */
+  function camPlace(mode, x, y, z) {
+    let w = 0, sx = 0, sy = 0;
+    if (mode === 1) {
+      sx = (x - 32) / CAM.slabHX; sy = (y - 32) / CAM.slabHY;
+      w = (1 - smoothstep(3.0, 5.5, wrap1(z - CAM.slabZ))) * rectW(sx, sy);
+    } else if (mode === 2) {
+      const R = MOON.R, rx = x - MOON.c[0], ry = y - MOON.c[1], rz = z - MOON.c[2];
+      const r = Math.hypot(rx, ry, rz) || 1e-9;
+      sx = -(rx / r) / CAM.shellSX; sy = -(ry / r) / CAM.shellSY;
+      w = smoothstep(R + 0.5, R + 2, r) * (1 - smoothstep(R + 7, R + 9.5, r)) * smoothstep(0.15, 0.35, rz / r) * rectW(sx, sy);
+    }
+    return { w, u: 0.5 - 0.5 * sx, v: 0.5 - 0.5 * sy };
+  }
+
   // ------------------------------------------------------- CPU reference field
   /** Field on an n³ periodic grid. The GPU version is the same two passes. */
   class Field {
@@ -150,13 +204,34 @@
       this._laplace(this.psi, this.lap);
       const L2 = new Float32Array(this.psi.length);
       this._laplace(this.lap, L2);
+      const cw = this.cam ? this._camPlaces() : null;
       for (let i = 0; i < this.psi.length; i++) {
         const p = this.psi[i];
-        const e = (epsOverride != null ? epsOverride : this.eps[i]) + this.trail[i];
-        const f = (e - q4) * p - 2 * q2 * this.lap[i] - L2[i] + g * p * p - p * p * p;
+        let e0 = epsOverride != null ? epsOverride : this.eps[i], h = 0, md = 0;
+        if (cw) {
+          const k = cw[i];
+          if (k.w > 0) {
+            const [b, d] = camTex(this.cam.img, k.u, k.v);
+            const target = this.L.epsSea + (this.L.epsIsland + 0.1 - this.L.epsSea) * b;
+            e0 += (target - e0) * k.w * this.cam.gain;
+            md = 0.45 * k.w * this.cam.motion * d;
+            h = 0.04 * k.w * this.cam.motion * d;
+          }
+        }
+        const e = e0 + this.trail[i] + md;
+        const f = (e - q4) * p - 2 * q2 * this.lap[i] - L2[i] + g * p * p - p * p * p + h;
         const M = 1 / (1 + T * p * p);
         this.psi[i] = p + dt * M * f;
       }
+    }
+    /** Attach a camera: {img: Float32Array(2·W·H), mode: 1 slab | 2 shell, gain, motion}. */
+    setCamera(cam) { this.cam = cam; this._cw = null; }
+    _camPlaces() {
+      if (this._cw && this._cwMode === this.cam.mode) return this._cw;
+      const n = this.n, s = N / n, out = new Array(this.psi.length);
+      for (let z = 0; z < n; z++) for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) out[this.idx(x, y, z)] = camPlace(this.cam.mode, x * s, y * s, z * s);
+      this._cw = out; this._cwMode = this.cam.mode;
+      return out;
     }
     stats(mask) {
       let mx = 0, sum2 = 0, n = 0;
@@ -187,5 +262,5 @@
     return J;
   }
 
-  return { N, MOON, MAX_ISLANDS, law, islandMask, Field, portal, portalJacobian, mix, rnd, wrapDist };
+  return { N, MOON, MAX_ISLANDS, CAM, law, islandMask, Field, portal, portalJacobian, camTex, camPlace, mix, rnd, wrapDist };
 });

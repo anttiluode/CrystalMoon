@@ -179,6 +179,70 @@ let slab;
     k2 < 1e-3 * n2, `max |∇²| of Kelvin image ${k2.toExponential(1)} vs naive pull-back without the R/|x| factor ${n2.toExponential(1)}`);
 }
 
+// ------------------------------------------------------------- the camera
+const camLaw = () => { const L = slabLaw(1, 7); L.epsSea = -0.3; return L; };
+const camImg = (fb, fd) => {
+  const W = CM.CAM.W, H = CM.CAM.H, a = new Float32Array(2 * W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { a[2 * (y * W + x)] = fb(x / W, y / H); a[2 * (y * W + x) + 1] = fd(x / W, y / H); }
+  return a;
+};
+function camRegions(f, inA, inB) {
+  const P = f._camPlaces(); let a = 0, an = 0, b = 0, bn = 0;
+  for (let i = 0; i < f.psi.length; i++) {
+    const k = P[i]; if (k.w <= 0.8) continue;
+    const c = Math.abs(f.psi[i]) > 0.3 ? 1 : 0;
+    if (inA(k)) { a += c; an++; } else if (inB(k)) { b += c; bn++; }
+  }
+  return [a / an, b / bn];
+}
+
+// T9 + T10: brightness gates where crystal lives, and it follows the picture
+{
+  const L = camLaw(), f = new CM.Field(L, 64);
+  f.eps.fill(L.epsSea); f.seedNoise(0.2, 3);
+  const left = (k) => k.u < 0.4, right = (k) => k.u > 0.6;
+  f.setCamera({ img: camImg((u) => (u < 0.5 ? 1 : 0), () => 0), mode: 1, gain: 1, motion: 1 });
+  for (let s = 0; s < 2000; s++) f.step();
+  const [b1, d1] = camRegions(f, left, right);
+  ok('T9 camera brightness gates ε: the bright half of the picture crystallises, the dark half stays empty',
+    b1 > 0.4 && d1 < 0.02, `crystal fraction bright ${b1.toFixed(2)}, dark ${d1.toFixed(2)} after 2000 steps`);
+  f.setCamera({ img: camImg((u) => (u < 0.5 ? 0 : 1), () => 0), mode: 1, gain: 1, motion: 1 });
+  for (let s = 0; s < 2500; s++) f.step();
+  const [b2, d2] = camRegions(f, left, right);
+  ok('T10 swap the picture: the old crystal melts, new crystal grows where it is now bright',
+    b2 < 0.05 && d2 > 0.4, `old-bright side ${b2.toFixed(2)}, new-bright side ${d2.toFixed(2)} after 2500 more steps`);
+}
+
+// T11: motion nucleates crystal even where the picture is dark
+{
+  const L = camLaw(), f = new CM.Field(L, 64);
+  f.eps.fill(L.epsSea); f.seedNoise(0.2, 3);
+  const disc = (k) => (k.u - 0.5) ** 2 + (k.v - 0.5) ** 2 < 0.03, far = (k) => (k.u - 0.5) ** 2 + (k.v - 0.5) ** 2 > 0.06;
+  f.setCamera({ img: camImg(() => 0, (u, v) => ((u - 0.5) ** 2 + (v - 0.5) ** 2 < 0.04 ? 1 : 0)), mode: 1, gain: 1, motion: 1 });
+  for (let s = 0; s < 2000; s++) f.step();
+  const [m, o] = camRegions(f, disc, far);
+  ok('T11 motion is a driver: a moving patch in a black picture nucleates crystal there and nowhere else',
+    m > 0.4 && o < 0.02, `crystal fraction in the moving patch ${m.toFixed(2)}, elsewhere ${o.toFixed(2)}`);
+}
+
+// T12: the face in the moon comes through the portal upright and mirrored like the slab
+{
+  let n = 0, bad = 0;
+  for (let z = 0; z < 64; z++) for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const k = CM.camPlace(2, x, y, z);
+    if (k.w < 0.5) continue;
+    const kSlab = { sx: 1 - 2 * k.u, sy: 1 - 2 * k.v };          // the slab's screen coordinates for the same pixel
+    const q = CM.portal([x, y, z]);
+    const c = CM.MOON.c, rq = Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]);
+    n++;
+    const sameSide = (Math.abs(kSlab.sx) < 0.05 || Math.sign(q[0] - c[0]) === Math.sign(kSlab.sx))
+      && (Math.abs(kSlab.sy) < 0.05 || Math.sign(q[1] - c[1]) === Math.sign(kSlab.sy));
+    if (!(q[2] < c[2] && rq < CM.MOON.R && sameSide)) bad++;
+  }
+  ok('T12 the shell picture, seen through the portal, sits on the near inside of the moon, same way up and mirrored like the slab',
+    n > 500 && bad === 0, `${n} shell voxels checked, ${bad} land wrong`);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} pass`);
 if (failed.length) process.exit(1);
