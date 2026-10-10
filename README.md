@@ -1,5 +1,7 @@
 # Crystal Moon
 
+![pic](pic.png)
+
 A Mexican-hat field condenses into crystal. Where the crystal is dense, its clock runs slow and light bends toward it. The moon is a sphere inversion: inside it, the infinite world beyond is turned inside out, and its horizon becomes the moon's glowing core. Fly in, and the world inside becomes the world outside, and a new world starts growing in the moon.
 
 One HTML page, WebGL2, no libraries. **Live:** https://anttiluode.github.io/CrystalMoon/
